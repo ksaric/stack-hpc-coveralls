@@ -26,6 +26,11 @@ import qualified Data.Yaml as Y
 import SHC.Types
 import SHC.Utils
 
+-- | A simple flag to signify what type of Stack call we need.
+data StackNixUsage
+    = StackUseNix
+    | StackDoNotUseNix
+    deriving (Eq, Show)
 
 stack :: [String] -> IO String
 stack = readP "stack"
@@ -44,8 +49,9 @@ getHpcDir package = (</> package) <$> stack ["path", "--local-hpc-root"]
 -- | Return the HPC mix directory, where module data is stored.  This
 -- path needs to be prefixed with the project's path
 -- (cf. 'stackProjectPath').
-getBaseMixDir :: IO FilePath
-getBaseMixDir = (</> "hpc") <$> stack ["path", "--dist-dir"]
+getBaseMixDir :: StackNixUsage -> IO FilePath
+getBaseMixDir StackUseNix       = (</> "hpc") <$> stack ["path", "--dist-dir", "--nix"]
+getBaseMixDir StackDoNotUseNix  = (</> "hpc") <$> stack ["path", "--dist-dir"]
 
 -- | Get relevant information from @stack query@.  Used to find
 -- package filepaths.
@@ -54,14 +60,17 @@ getStackQuery = (Y.decodeEither' . BS8.pack <$> stack ["query"]) >>= either err 
   where err = fail . (++) "getStackQuery: Couldn't decode the result of 'stack query' as YAML: " . show
 
 -- | Get the key that GHC uses for the given package.
+-- "stack exec -- ghc-pkg field cardano-shell key --simple-output"
 getProjectKey :: String -> IO String
 getProjectKey pkgName = stack ["exec", "--", "ghc-pkg", "field", pkgName, "key", "--simple-output"]
 
+
 -- | Get the Stack info needed to find project files.
-getStackProjects :: IO [StackProject]
-getStackProjects = do
-  sq <- getStackQuery
-  baseMixDir <- getBaseMixDir
+getStackProjects :: StackNixUsage -> IO [StackProject]
+getStackProjects stackNixUsage = do
+  sq            <- getStackQuery
+  baseMixDir    <- getBaseMixDir stackNixUsage
+
   forM (stackQueryLocals sq) $ \(pkgName, filepath) -> do
     relfp <- makeRelativeToCurrentDirectory filepath
     let mpath = guard (not $ relfp `equalFilePath` ".") >> Just relfp

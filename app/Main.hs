@@ -53,10 +53,17 @@ defaultOr args opt action = maybe action return $ args `getArg` opt
 
 getConfig :: Arguments -> IO Config
 getConfig args = do
-    pn <- args `getArgOrExit` argument "package-name"
-    let suites = args `getAllArgs` argument "suite-name"
+    pn          <- args `getArgOrExit` argument "package-name"
+    let suites  = args `getAllArgs` argument "suite-name"
+
+    -- Whether the stack needs to use Nix or not.
+    let useNix  =   if args `isPresent` longOption "use-nix"
+                        then StackUseNix
+                        else StackDoNotUseNix
+
     unless (not $ null suites) $
         putStrLn "Error: provide at least one test-suite name" >> exitFailure
+
     (sn, jId) <- getServiceAndJobId
     Config <$> pure pn
            <*> pure suites
@@ -69,7 +76,7 @@ getConfig args = do
            <*> pure (if args `isPresent` longOption "partial-coverage"
                         then PartialLines
                         else FullLines)
-           <*> getStackProjects
+           <*> getStackProjects useNix
            <*> pure (args `isPresent` longOption "fetch-coverage")
 
 main :: IO ()
